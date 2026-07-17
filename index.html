@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WHRL Engineering Diagnostics</title>
+<link rel="stylesheet" href="css/diagnostics.css">
+</head>
+<body>
+
+  <div class="app-window">
+    <div class="titlebar">
+      <div><span class="titlebar-icon"></span>WHRL Engineering Diagnostics &mdash; Dashboard</div>
+      <div class="titlebar-buttons"><span>_</span><span>&#9633;</span><span>&times;</span></div>
+    </div>
+
+    <div class="menubar">
+      <span>File</span><span>View</span><span>Tools</span><span>Window</span><span>Help</span>
+    </div>
+
+    <div class="toolbar">Station: <strong id="station-name"></strong></div>
+
+    <div class="content-area">
+
+      <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">
+        <tr>
+          <td style="width:55%; vertical-align:top; padding-right:14px;">
+            <div class="panel-outset">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                Engineering Utilities
+              </div>
+              <div id="menu-container"></div>
+            </div>
+          </td>
+          <td style="width:45%; vertical-align:top;">
+            <div class="panel-outset">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                System Status
+              </div>
+              <div class="panel-inset" id="status-container"></div>
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <div class="panel-inset mono" style="font-size:11px; color:#444;">
+        <div>Last Carrier Detection: <span class="carrier-highlight" id="carrier-timestamp"></span></div>
+      </div>
+
+    </div>
+
+    <div class="statusbar">
+      <span id="footer-station"></span>
+      <span id="footer-rev"></span>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/ui.js"></script>
+  <script>
+    document.getElementById("station-name").textContent = WHRL_CONFIG.station.name;
+    document.getElementById("footer-station").textContent = WHRL_CONFIG.station.name;
+    document.getElementById("footer-rev").textContent = WHRL_CONFIG.station.lastMaintained;
+
+    // Status panel
+    const statusContainer = document.getElementById("status-container");
+    Object.values(WHRL_CONFIG.dashboardStatus).forEach(item => {
+      renderStatusRow(statusContainer, item);
+    });
+
+    // Utilities menu (respects lock state in config.js)
+    renderUtilityMenu(document.getElementById("menu-container"));
+
+    // The one quiet unexplained detail — always 3:33 AM, today.
+    document.getElementById("carrier-timestamp").textContent = getLastCarrierTimestamp();
+  </script>
+</body>
+</html>

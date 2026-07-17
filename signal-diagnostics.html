@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WHRL Engineering Diagnostics &mdash; Signal Diagnostics</title>
+<link rel="stylesheet" href="css/diagnostics.css">
+<style>
+  #recovered-canvas {
+    width: 100%;
+    max-width: 480px;
+    image-rendering: pixelated;
+    border: 2px solid var(--border-dark);
+    border-top-color: var(--border-darker);
+    border-left-color: var(--border-darker);
+    background: #000;
+    display: block;
+  }
+  .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+  .slider-row label { width: 90px; flex-shrink: 0; }
+  .slider-row input[type="range"] { flex: 1; }
+  .input-row { margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+
+  <div class="app-window">
+    <div class="titlebar">
+      <div><span class="titlebar-icon"></span>WHRL Engineering Diagnostics &mdash; Signal Diagnostics</div>
+      <div class="titlebar-buttons"><span>_</span><span>&#9633;</span><span>&times;</span></div>
+    </div>
+
+    <div class="menubar">
+      <span>File</span><span>View</span><span>Tools</span><span>Window</span><span>Help</span>
+    </div>
+
+    <div class="toolbar">
+      <a href="index.html" style="color:#00238C;">&larr; Dashboard</a>
+    </div>
+
+    <div class="content-area">
+
+      <table style="width:100%; border-collapse:collapse;">
+        <tr>
+          <td style="width:50%; vertical-align:top; padding-right:14px;">
+
+            <div class="panel-outset" style="margin-bottom:12px;">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                Signal Input
+              </div>
+              <div class="input-row">
+                <input type="file" id="file-input" accept="audio/*">
+              </div>
+              <div class="input-row">
+                <button id="mic-button">Record from Microphone (10s)</button>
+              </div>
+              <div id="input-info" class="mono" style="font-size:11px; color:#444;"></div>
+            </div>
+
+            <div class="panel-outset">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                Analysis
+              </div>
+              <button id="recover-button" disabled>Recover Embedded Transmission</button>
+              <div style="margin-top:10px;">
+                <div class="progress-outer"><div class="progress-inner" id="progress-bar"></div></div>
+              </div>
+              <div class="stage-log" id="stage-log" style="margin-top:8px;"></div>
+            </div>
+
+          </td>
+
+          <td style="width:50%; vertical-align:top;">
+
+            <div class="panel-outset" style="margin-bottom:12px;">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                Recovered Frame
+              </div>
+              <canvas id="recovered-canvas"></canvas>
+              <div style="margin-top:10px;">
+                <div class="slider-row">
+                  <label for="brightness-slider">Brightness</label>
+                  <input type="range" id="brightness-slider" min="-60" max="60" value="0">
+                </div>
+                <div class="slider-row">
+                  <label for="contrast-slider">Contrast</label>
+                  <input type="range" id="contrast-slider" min="30" max="300" value="140">
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-outset">
+              <div style="font-weight:bold; margin-bottom:8px; border-bottom:1px solid #999; padding-bottom:4px;">
+                Carrier Metadata
+              </div>
+              <div class="panel-inset" id="metadata-container"></div>
+            </div>
+
+          </td>
+        </tr>
+      </table>
+
+    </div>
+
+    <div class="statusbar">
+      <span id="footer-station"></span>
+      <span id="footer-status">Idle</span>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/audio-input.js"></script>
+  <script src="js/spectrogram-render.js"></script>
+  <script src="js/recovery-engine.js"></script>
+  <script>
+    document.getElementById("footer-station").textContent = WHRL_CONFIG.station.name;
+
+    let currentAudioData = null;
+    let currentSpectrogram = null; // cached so slider adjustments don't re-run the FFT
+
+    const fileInput = document.getElementById("file-input");
+    const micButton = document.getElementById("mic-button");
+    const recoverButton = document.getElementById("recover-button");
+    const inputInfo = document.getElementById("input-info");
+    const stageLog = document.getElementById("stage-log");
+    const progressBar = document.getElementById("progress-bar");
+    const canvas = document.getElementById("recovered-canvas");
+    const metadataContainer = document.getElementById("metadata-container");
+    const footerStatus = document.getElementById("footer-status");
+    const brightnessSlider = document.getElementById("brightness-slider");
+    const contrastSlider = document.getElementById("contrast-slider");
+
+    function describeInput(audioData) {
+      const mins = Math.floor(audioData.duration / 60);
+      const secs = (audioData.duration % 60).toFixed(1);
+      inputInfo.textContent =
+        `Loaded: ${mins}m ${secs}s @ ${audioData.sampleRate} Hz`;
+      recoverButton.disabled = false;
+      footerStatus.textContent = "Signal loaded";
+    }
+
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      footerStatus.textContent = "Decoding...";
+      try {
+        currentAudioData = await WHRLAudioInput.loadFromFile(file);
+        describeInput(currentAudioData);
+      } catch (err) {
+        inputInfo.textContent = "Unable to decode this file.";
+        footerStatus.textContent = "Decode failed";
+        console.error(err);
+      }
+    });
+
+    micButton.addEventListener("click", async () => {
+      footerStatus.textContent = "Recording...";
+      micButton.disabled = true;
+      try {
+        currentAudioData = await WHRLAudioInput.recordFromMicrophone(10, (progress) => {
+          inputInfo.textContent = `Recording... ${Math.round(progress * 100)}%`;
+        });
+        describeInput(currentAudioData);
+      } catch (err) {
+        inputInfo.textContent = "Microphone access denied or unavailable.";
+        footerStatus.textContent = "Recording failed";
+        console.error(err);
+      } finally {
+        micButton.disabled = false;
+      }
+    });
+
+    recoverButton.addEventListener("click", async () => {
+      if (!currentAudioData) return;
+      recoverButton.disabled = true;
+      stageLog.innerHTML = "";
+      progressBar.style.width = "0%";
+      footerStatus.textContent = "Analyzing...";
+
+      const stageLines = [];
+      const totalStages = WHRL_CONFIG.recoveryStages.length;
+      let stageIndex = 0;
+
+      const result = await WHRLRecoveryEngine.recoverTransmission(currentAudioData, {
+        canvas: canvas,
+        brightness: Number(brightnessSlider.value),
+        contrast: Number(contrastSlider.value) / 100,
+        onStage: (msg) => {
+          stageIndex++;
+          // Mark all previous lines "done", current line active
+          stageLines.forEach(el => el.className = "done");
+          const line = document.createElement("div");
+          line.className = "current";
+          line.textContent = msg;
+          stageLog.appendChild(line);
+          stageLines.push(line);
+          progressBar.style.width = `${Math.round((stageIndex / totalStages) * 100)}%`;
+        }
+      });
+
+      currentSpectrogram = WHRLSpectrogram.computeSpectrogram(
+        currentAudioData.samples, currentAudioData.sampleRate, { fftSize: 1024, overlap: 0.5 }
+      );
+
+      stageLines.forEach(el => el.className = "done");
+      footerStatus.textContent = `Recovered (confidence: ${(result.confidence * 100).toFixed(0)}%)`;
+      recoverButton.disabled = false;
+
+      metadataContainer.innerHTML = "";
+      renderStatusRow(metadataContainer, { label: "Transmission Age", value: `${result.metadata.durationSeconds.toFixed(1)}s`, state: "unknown" });
+      renderStatusRow(metadataContainer, { label: "Noise Floor", value: `${result.metadata.noiseFloorDb} dB`, state: "unknown" });
+      renderStatusRow(metadataContainer, { label: "Carrier Integrity", value: `${result.metadata.dynamicRangeDb} dB`, state: result.confidence > 0.4 ? "ok" : "warn" });
+      renderStatusRow(metadataContainer, { label: "Frame Confidence", value: `${(result.confidence * 100).toFixed(0)}%`, state: result.confidence > 0.4 ? "ok" : "warn" });
+    });
+
+    // Live brightness/contrast re-render — uses the cached
+    // spectrogram data rather than recomputing the FFT, so this
+    // stays instant even on longer recordings.
+    function rerenderWithSliders() {
+      if (!currentSpectrogram) return;
+      WHRLSpectrogram.renderToCanvas(currentSpectrogram, canvas, {
+        brightness: Number(brightnessSlider.value),
+        contrast: Number(contrastSlider.value) / 100
+      });
+    }
+    brightnessSlider.addEventListener("input", rerenderWithSliders);
+    contrastSlider.addEventListener("input", rerenderWithSliders);
+  </script>
+</body>
+</html>
